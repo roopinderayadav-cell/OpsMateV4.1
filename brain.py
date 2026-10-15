@@ -217,18 +217,27 @@ which who why please tell know need want get about any there step steps process
 long take takes time timeline many much come does happen kya hai""".split())
 
 
+# Generic words staff add to a question ("how to CHECK ... in the GDS", "COMMAND for ...") that a
+# good passage often does not repeat. They count only when the question has nothing more specific.
+_SOFT = set("""check checking find see show use using make way gds system systems command commands cmd entry
+entries format formats tool tools screen""".split())
+
+
 def coverage(question, text):
     """Share of the question's important words that appear in the passage."""
     norm = lambda x: re.sub(r"(\d),(\d{3})", r"\1\2", x.lower())
     q = {w for w in re.findall(r"[a-z0-9]+", norm(question)) if len(w) > 2 and w not in _STOP}
+    if len(q - _SOFT) >= 2:              # ignore generic words only when 2+ specific words remain
+        q = q - _SOFT
     if not q:
         return 1.0
     t = set(re.findall(r"[a-z0-9]+", norm(text)))
+    loose = len(q) > 1                   # one-word questions must match the whole word, not 5 letters
 
     def present(w, alts=True):
         if w in t or w + "s" in t or w.rstrip("s") in t:
             return True
-        if len(w) >= 5 and any(x.startswith(w[:5]) for x in t):
+        if loose and len(w) >= 5 and any(x.startswith(w[:5]) for x in t):
             return True
         # 'usa' -> 'united states', 'wrong' -> 'mistake correction'
         return alts and any(present(a, False) for a in SYNONYMS.get(w, "").split())
@@ -236,7 +245,9 @@ def coverage(question, text):
 
 
 def content_words(question):
-    return [w for w in re.findall(r"[a-z0-9]+", question.lower()) if len(w) > 2 and w not in _STOP]
+    words = [w for w in re.findall(r"[a-z0-9]+", question.lower()) if len(w) > 2 and w not in _STOP]
+    hard = [w for w in words if w not in _SOFT]
+    return hard if len(hard) >= 2 else words
 
 
 def offline_confidence(score, cover, semantic=None, nwords=3):

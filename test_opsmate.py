@@ -174,3 +174,11 @@ def test_quota_error_pauses_ai_and_answers_from_documents(monkeypatch):
     r2 = kb.ask("NORAM", "what is TST", "tester")
     assert r2["result"] == "answered" and calls["n"] == before        # AI skipped while paused
     assert time.time() - t0 < 5
+
+
+def test_generic_words_do_not_block_an_answer():
+    import brain
+    sec = "Sabre - Availability and schedules\nAvailability for a date and city pair: 1 + date + from + to"
+    assert brain.coverage("how to check the availability in sabre GDS", sec) == 1.0
+    assert brain.coverage("what is the command to print", "Sabre - Mandatory PNR fields (PRINT)") < 0.7
+    assert kb.definition_term("what is AGM process") == "agm" and kb.definition_term("what is the BRIM system?") == "brim"

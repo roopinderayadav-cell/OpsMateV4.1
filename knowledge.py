@@ -800,6 +800,8 @@ def definition_term(question):
     if not m:
         return None
     term = m.group(1).strip(" ?.").lower()
+    # 'what is AGM process / system / tool' -> AGM
+    term = re.sub(r"\s+(process|processes|system|tool|application|app|platform|team)$", "", term).strip()
     return term if 0 < len(term.split()) <= 3 else None
 
 
