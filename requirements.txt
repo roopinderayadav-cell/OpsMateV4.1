@@ -1,0 +1,15 @@
+streamlit==1.61.1
+pandas
+numpy
+scikit-learn
+altair
+pypdf
+pdfplumber
+pypdfium2
+python-docx
+python-pptx
+openpyxl
+Pillow
+google-genai
+anthropic
+streamlit-paste-button

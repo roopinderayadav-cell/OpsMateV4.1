@@ -1,0 +1,8 @@
+EUROPE Refund Process
+
+Refund timeline
+Card refunds reach the traveller in 14 business days after the refund is processed in the GDS.
+Always share the refund number with the traveller.
+
+Refund approval
+Refunds above EUR 2,000 need Team Lead approval before processing.

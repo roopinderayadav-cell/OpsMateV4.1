@@ -1,0 +1,20 @@
+# OBT Cancellation and Self-Booking Support SOP
+SAMPLE DOCUMENT - fictional, for demonstration. Explains how agents support travellers who book in the online booking tool (OBT), such as Concur or Cytric.
+
+# OBT refund of a self-booked ticket
+1. Ask the traveller to cancel the trip in the OBT first; the OBT sends the booking to the offline queue.
+2. Open the PNR from the OBT queue and check the ticket status is OPEN.
+3. Check the fare rules (Category 16 and 33) for the refund conditions.
+4. Process the refund in the GDS and add the remark RM*OBT REFUND PROCESSED in the PNR.
+5. Update the OBT trip status to Cancelled and email the traveller the refund amount.
+Important: never cancel a self-booked trip only in the GDS - the OBT will not show the change.
+
+# Traveller cannot log in to the OBT
+1. Check the traveller profile is active in the OBT admin screen.
+2. Reset the password from the admin screen and ask the traveller to use the single sign-on link.
+3. If single sign-on fails, raise a ticket with the OBT support team with a screenshot of the error.
+
+# OBT booking not ticketed
+1. Check the OBT queue for bookings waiting for approval.
+2. If approval is pending, remind the approver; ticketing happens automatically after approval.
+3. If approval is done but there is no ticket after 2 hours, issue the ticket offline and add the remark RM*OBT OFFLINE TKT.
