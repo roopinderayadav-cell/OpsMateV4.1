@@ -140,3 +140,37 @@ def test_gds_commands_are_detected_without_false_positives():
     t = "Retrieve RTABC123, price FXP, issue TTP/RT, Sabre *T and WETR*1. APAC ADM NON-REF AI101 DEL-BOM HK1"
     assert brain.gds_commands(t) == ["RTABC123", "FXP", "TTP/RT", "*T", "WETR*1"]
     assert "`TTP/RT`" in brain.highlight_commands(t) and "`APAC`" not in brain.highlight_commands(t)
+
+
+def test_document_answer_when_ai_says_not_found(monkeypatch):
+    """Busy free tier: the AI replies 'not found' although the SOP clearly answers - show the SOP answer."""
+    monkeypatch.setattr(kb.llm, "ai_on", lambda: True)
+    monkeypatch.setattr(kb.brain, "ai_answer", lambda *a, **k: {
+        "status": "not_found", "confidence": "low", "answer": "", "important": "", "conflict": "", "used": []})
+    monkeypatch.setattr(kb.brain, "ai_understand", lambda *a, **k: {"corrected": a[0], "queries": [], "format": "short"})
+    r = kb.ask("NORAM", "list of amadeus commands", "tester")
+    assert r["result"] == "answered" and "AN15NOVDELBLR" in r["answer"]
+    assert any("taken directly from the documents" in n for n in r["meta"]["notes"])
+    assert kb.ask("NORAM", "what is the canteen menu today", "tester")["result"] == "not_found"   # still refuses
+
+
+def test_quota_error_pauses_ai_and_answers_from_documents(monkeypatch):
+    import time
+    calls = {"n": 0}
+
+    def quota(*a, **k):
+        calls["n"] += 1
+        raise RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+    monkeypatch.setattr(kb.llm, "provider", lambda: "gemini")
+    monkeypatch.setattr(kb.llm, "ai_on", lambda: True)
+    monkeypatch.setattr(kb.llm, "_generate", lambda *a, **k: kb.llm._retry(quota))
+    monkeypatch.setattr(kb.llm.time, "sleep", lambda s: None)
+    monkeypatch.setattr(kb.llm, "_paused_until", {"generate": 0.0, "embed": 0.0})
+    r = kb.ask("NORAM", "list of amadeus commands", "tester")
+    assert r["result"] == "answered" and "AN15NOVDELBLR" in r["answer"]
+    assert kb.llm.paused("generate") and calls["n"] >= 1
+    before = calls["n"]
+    t0 = time.time()
+    r2 = kb.ask("NORAM", "what is TST", "tester")
+    assert r2["result"] == "answered" and calls["n"] == before        # AI skipped while paused
+    assert time.time() - t0 < 5

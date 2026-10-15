@@ -76,3 +76,6 @@ non-confidential SOPs on the free tier.
 - **OpsMate asks before guessing**: if the steps differ by GDS (Amadeus / Sabre / Galileo …) and the agent did not
   say which, or the best answers come from different sub-LOBs and no sub-LOB is selected, OpsMate asks with
   buttons, then answers. "Search all" answers without choosing. Settings: `ASK_CLARIFY`, `CLARIFY_GROUPS` in config.py.
+- **Answers even when the AI is out of quota**: if the AI fails, is out of quota or replies "not found" while the
+  documents clearly answer the question (strict word-match rule), OpsMate shows the document answer with a note.
+  After a quota error the AI is skipped for 5 minutes (`AI_PAUSE_SECONDS`), so answers come at once.

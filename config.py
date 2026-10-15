@@ -184,6 +184,13 @@ CLAUDE_FAST_MODEL = _secret("CLAUDE_FAST_MODEL", "claude-haiku-4-5-20251001")
 # ---- Images inside documents ----------------------------------------------
 READ_DOC_IMAGES = True    # read screenshots/tables/scans inside uploaded files (AI mode)
 MAX_IMAGES_PER_DOC = 25
+# When the AI is out of quota, unreachable or says "not found", OpsMate still answers from the
+# documents if the strict word-match rule finds a strong match (the same rule used with AI off).
+DOCUMENT_ANSWER_WHEN_AI_UNSURE = True
+DOCUMENT_OVERRIDE_LEVELS = ("high", "medium")
+AI_PAUSE_SECONDS = 300        # after a quota error, skip the AI for 5 minutes (no slow retries)
+DEFINITION_BOOST = 1.25      # 'what is X': sections headed 'X - ...' or 'What is X?' rank first
+
 # Ask a short question first when the answer depends on something the agent did not say
 ASK_CLARIFY = True
 CLARIFY_GROUPS = {"GDS": ["Amadeus", "Sabre", "Galileo", "Worldspan", "Apollo"]}

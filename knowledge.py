@@ -789,6 +789,27 @@ def lob_factor(item, region, sub_lob=None):
     return f
 
 
+_DEF_Q = re.compile(r"^\s*(?:what\s+is|what's|whats|wat\s+is|define|definition\s+of|meaning\s+of|full\s+form\s+of)\s+"
+                    r"(?:an?\s+|the\s+)?(.+?)(?:\s+used\s+for|\s+mean|\s+stand\s+for)?\s*\??\s*$", re.I)
+_DEF_Q2 = re.compile(r"^\s*what\s+does\s+(.+?)\s+(?:mean|stand\s+for|do)\s*\??\s*$", re.I)
+
+
+def definition_term(question):
+    """'what is AGM?' -> 'agm'; 'define ADM' -> 'adm'. None for other questions (or long terms)."""
+    m = _DEF_Q.match(question or "") or _DEF_Q2.match(question or "")
+    if not m:
+        return None
+    term = m.group(1).strip(" ?.").lower()
+    return term if 0 < len(term.split()) <= 3 else None
+
+
+def _defines(location, term):
+    """True when a section heading defines the term: 'AGM - ...', 'AGM: ...', 'AGM', 'What is AGM?'."""
+    loc = re.sub(r"\s-\s(Table \d+|image \d+)$", "", (location or "").lower()).strip()
+    return (loc == term or loc.startswith(term + " - ") or loc.startswith(term + ": ")
+            or loc.startswith(term + " (") or f"what is {term}?" in loc or f"what is {term} " in loc + " ")
+
+
 def search(region, queries, k=config.CANDIDATES, fmt="short", query_vec=None, sub_lob=None, all_regions=False,
            per_doc=None):
     """Search ALL documents with every phrasing of the question.
@@ -832,8 +853,11 @@ def search(region, queries, k=config.CANDIDATES, fmt="short", query_vec=None, su
         qsim = cosine_similarity(qv.transform(queries), lq).max(axis=0)
         for i, sim in zip(learned_idx, qsim):
             items[i]["qsim"] = float(sim)
+    term = definition_term(queries[0])
     for idx, item in enumerate(items):
         boost = 1.0
+        if term and _defines(item.get("location", ""), term):
+            boost *= config.DEFINITION_BOOST     # "what is AGM" -> the passage that defines AGM, not one that only uses it
         if item["kind"] == "learned":
             boost = config.AUTO_LEARNED_BOOST if item.get("auto") else config.LEARNED_BOOST
             if item.get("qsim", 0) >= 0.6:
@@ -1078,16 +1102,51 @@ def ask(region, question, asked_by, image=None, sub_lob=None, clarify=True):
                 meta["notes"].append(str(e))
                 out["mode"] = "documents"
 
+        def documents_decision():
+            """The tested word-match rule (no AI). If meaning-search ranked the passages, rank them
+            again by words first, so a quota problem can never hide a strong documented answer."""
+            h, b, c = hits, best, cover
+            if qvec is not None:
+                h = expand_sections(search(region, queries, fmt=fmt, query_vec=None, sub_lob=sub_lob,
+                                           all_regions=all_regions))
+                for x in h[:5]:
+                    x["cover"] = brain.coverage(st, x.get("search", x["text"]))
+                    x["score"] = x["score"] * (0.6 + 0.4 * x["cover"])
+                h = sorted(h[:5], key=lambda x: x["score"], reverse=True) + h[5:]
+                b = h[0] if h else None
+                c = brain.coverage(st, b.get("search", b["text"])) if b else 0
+            if not b:
+                return None
+            cf = brain.offline_confidence(b["lex"], c, None, len(brain.content_words(st)))
+            if b["kind"] == "learned" and (cf == "medium" or (b["lex"] >= 0.25 and c >= 0.5)):
+                cf = "high" if cf == "medium" else "medium"
+            res = {"hits": h, "best": b, "cover": c, "conf": cf, "result": "not_found",
+                   "answer": None, "conflict_pair": None}
+            pair = brain.offline_conflict(st, h) if cf != "low" else None
+            if pair and b["kind"] != "learned":
+                res.update(result="conflict", conflict_pair=list(pair))
+            elif cf != "low":
+                res.update(result="answered", answer=brain.crisp_answer(fixed, h, fmt))
+            return res
+
         if out["mode"] == "documents" and hits:
-            # without an AI answer, use the tested word-match rule to decide (not the semantic one)
-            conf = brain.offline_confidence(best["lex"], cover, None, len(brain.content_words(st)))
-            if best["kind"] == "learned" and (conf == "medium" or (best["lex"] >= 0.25 and cover >= 0.5)):
-                conf = "high" if conf == "medium" else "medium"
-            pair = brain.offline_conflict(st, hits) if conf != "low" else None
-            if pair and best["kind"] != "learned":
-                out["result"], out["conflict_pair"] = "conflict", list(pair)
-            elif conf != "low":
-                out["result"], out["answer"] = "answered", brain.crisp_answer(fixed, hits, fmt)
+            d = documents_decision()
+            if d:
+                hits, best, cover, conf = d["hits"], d["best"], d["cover"], d["conf"]
+                out["result"], out["conflict_pair"] = d["result"], d["conflict_pair"]
+                if d["answer"]:
+                    out["answer"] = d["answer"]
+        elif (out["mode"] == "ai" and out["result"] == "not_found" and hits
+              and config.DOCUMENT_ANSWER_WHEN_AI_UNSURE):
+            # The AI said "not found" (often a cut-short reply on a busy free tier) - if the documents
+            # clearly answer the question by the strict word-match rule, show that answer instead.
+            d = documents_decision()
+            if d and d["result"] == "answered" and d["conf"] in config.DOCUMENT_OVERRIDE_LEVELS:
+                hits, best, cover, conf = d["hits"], d["best"], d["cover"], d["conf"]
+                out.update(result="answered", answer=d["answer"], mode="documents", important="")
+                meta["notes"].append("The AI could not confirm an answer, so this answer is taken directly "
+                                     "from the documents - check the source below.")
+                meta["layers"].append("document answer (AI unsure)")
         out.update(hits=hits, best=best, cover=cover, conf=conf)
         return out
 

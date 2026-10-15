@@ -100,6 +100,26 @@ def _png(img_bytes):
     return buf.getvalue()
 
 
+# After a quota / rate-limit error the AI is skipped for a few minutes, so staff get the
+# document answer at once instead of waiting for the AI to fail again on every question.
+_paused_until = {"generate": 0.0, "embed": 0.0}
+QUOTA_TEXT = "The AI's free quota is used up for now - answering from documents."
+
+
+def paused(kind="generate"):
+    return time.time() < _paused_until.get(kind, 0.0)
+
+
+def _check_pause(kind):
+    if paused(kind):
+        raise AIError(QUOTA_TEXT)
+
+
+def _note_failure(kind, err):
+    if err.args and err.args[0] == QUOTA_TEXT:
+        _paused_until[kind] = time.time() + getattr(config, "AI_PAUSE_SECONDS", 300)
+
+
 def _retry(fn):
     """Try twice: free tiers sometimes answer 'busy / rate limit' for a moment."""
     last = None
@@ -123,7 +143,7 @@ def _friendly(e):
     if "api key" in low or "api_key" in low or "401" in low or "permission" in low or "invalid" in low and "key" in low:
         return "The AI key was rejected - check the key in Secrets."
     if "429" in low or "quota" in low or "resource_exhausted" in low or "rate" in low:
-        return "The AI's free quota is used up for now - answering from documents."
+        return QUOTA_TEXT
     return f"AI unavailable ({msg[:120]})"
 
 
@@ -135,6 +155,15 @@ def generate(prompt, images=None, audio=None, fast=False, json_mode=False, max_t
     p = provider()
     if p is None:
         raise AIError("AI is off")
+    _check_pause("generate")
+    try:
+        return _generate(p, prompt, images, audio, fast, json_mode, max_tokens)
+    except AIError as e:
+        _note_failure("generate", e)
+        raise
+
+
+def _generate(p, prompt, images, audio, fast, json_mode, max_tokens):
     images = [_png(b) for b in (images or []) if b]
 
     if p == "gemini":
@@ -185,6 +214,15 @@ def embed(texts, query=False):
     """Returns an (n, EMBED_DIM) float32 array of unit vectors, or raises AIError."""
     if not embeddings_on():
         raise AIError("Semantic search needs a Gemini key")
+    _check_pause("embed")
+    try:
+        return _embed(texts, query)
+    except AIError as e:
+        _note_failure("embed", e)
+        raise
+
+
+def _embed(texts, query=False):
     types = _types()
     out = []
     for i in range(0, len(texts), 50):
