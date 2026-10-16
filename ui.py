@@ -37,12 +37,12 @@ CSS = f"""
   .om-av {{width:34px; height:34px; border-radius:50%; background:#fff; color:{BLUE};
            display:flex; align-items:center; justify-content:center; font-weight:700;}}
   .om-motto {{font-weight:700; letter-spacing:.02em; opacity:.95}}
-  .om-hero {{border-radius:16px; padding:34px 36px 30px; color:#fff; position:relative; overflow:hidden;
+  .om-hero {{border-radius:16px; padding:18px 28px 16px; color:#fff; position:relative; overflow:hidden;
             background: linear-gradient(115deg, #0e1a3c 0%, #23367a 40%, #c9643f 82%, #f6b26b 100%);}}
-  .om-hero h1 {{font-size:2.1rem !important; line-height:1.2; margin:0 0 8px; color:#fff !important; padding:0 !important;}}
+  .om-hero h1 {{font-size:1.5rem !important; line-height:1.2; margin:0 0 8px; color:#fff !important; padding:0 !important;}}
   .om-hero h1 span {{color:#8fb8ff !important;}}
-  .om-hero p {{margin:0; opacity:.92; font-size:1.05rem; color:#fff !important;}}
-  .om-hero svg {{position:absolute; right:30px; top:18px; opacity:.9}}
+  .om-hero p {{margin:0; opacity:.92; font-size:.95rem; color:#fff !important;}}
+  .om-hero svg {{position:absolute; right:24px; top:8px; height:78px; width:150px; opacity:.9}}
   .om-card {{background:#fff; border:1px solid #e3e8f2; border-radius:14px; padding:16px 18px; margin-bottom:12px;}}
   .om-card h4 {{margin:0 0 10px; font-size:1rem;}}
   .om-badge {{display:inline-block; padding:2px 10px; border-radius:999px; font-size:.75rem; font-weight:700;}}
@@ -107,7 +107,7 @@ def topbar(user, role, region):
 
 def hero(first_name):
     st.markdown(
-        f"<div class='om-hero'>{PLANE_SVG}<h1>Hi {esc(first_name)},<br>How can <span>{config.APP_NAME}</span> "
+        f"<div class='om-hero'>{PLANE_SVG}<h1>Hi {esc(first_name)}, how can <span>{config.APP_NAME}</span> "
         f"help you today?</h1><p>Ask anything about products, processes, systems or policies.</p></div>",
         unsafe_allow_html=True)
 

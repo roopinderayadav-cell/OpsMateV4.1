@@ -36,22 +36,7 @@ try:                                    # "Paste screenshot" button (optional ad
 except ImportError:
     paste_image_button = None
 
-SUGGESTIONS = {
-    "Ticketing": ["How do I issue a ticket in Amadeus?", "What should I check before issuing a ticket?",
-                  "Can I void a ticket the next day?"],
-    "Refunds": ["How do I process a refund?", "How long does a refund take?",
-                "Is tax refundable on a non-refundable ticket?"],
-    "Exchanges": ["How do I reissue a ticket using ATC?", "How do I change the travel date on an issued ticket?",
-                  "What is a revalidation?"],
-    "OBT": ["How do I help a traveller with OBT self booking?", "OBT self booking cancellation"],
-    "Invoicing": ["How do I send an invoice to the client?", "Invoice to supplier process"],
-    "Fare Rules": ["Where do I find the fare rules?", "What are Category 16, 31 and 33?"],
-    "GDS (Amadeus/Sabre)": ["List of Amadeus commands", "How do I open the ticket image?",
-                            "How do I create a new PNR step by step?"],
-    "Profiles": ["How do I add a frequent flyer number?", "How do I add a meal or wheelchair request?"],
-    "Travel Policy": ["When is business class allowed?", "When do I need approval before ticketing?"],
-    "Quality / Errors": ["What is an ADM and how do I avoid it?", "What is the escalation matrix?"],
-}
+# Shown under 'Try asking' only when no document or history suggests anything yet
 DEFAULT_TRY = ["How to reissue a ticket in Amadeus?", "Refund process step by step",
                "Can I void a ticket the next day?", "What is the escalation matrix?",
                "List of Amadeus commands"]
@@ -237,7 +222,9 @@ def render_answer(msg, i):
     bits.append("🤖 AI" if meta.get("mode") == "ai" else "📄 documents")
     if meta.get("seconds") is not None:
         bits.append(f"⏱ {meta['seconds']} s")
-    if meta.get("did_you_mean"):
+    if meta.get("followup"):
+        bits.append(f"🔗 follow-up, understood as *{meta['followup']}*")
+    elif meta.get("did_you_mean"):
         bits.append(f"🔤 understood as *{meta['did_you_mean']}*")
     st.caption(" · ".join(bits), help=CONF_HELP if result == "answered" else None)
     for note in meta.get("notes", []):
@@ -265,11 +252,18 @@ def render_answer(msg, i):
 
 def ask_now(text, image=None, sub_lob=None, clarify=True):
     chat = ss.chats[region]
-    chat.append({"role": "user", "content": text or "*(screenshot)*", "image": image,
+    # short follow-up ("how about Sabre?") -> full question using the previous one in this chat
+    prev = next((m.get("asked") or m["content"] for m in reversed(chat) if m["role"] == "user"
+                 and not m.get("image")), "")
+    sub_names = [x for lst in LOBS.values() for x in lst]
+    asked = brain.merge_followup(prev, text, sub_names) if text and not image else text
+    chat.append({"role": "user", "content": text or "*(screenshot)*", "image": image, "asked": asked,
                  "lob": " › ".join(x for x in (region, sub_lob) if x)})
     where = f"{sub_lob} documents first" if sub_lob else f"{region} documents"
     with st.spinner("Reading your screenshot and searching SOPs…" if image else f"Searching {where}…"):
-        res = kb.ask(region, text, ss.user, image=image, sub_lob=sub_lob, clarify=clarify)
+        res = kb.ask(region, asked, ss.user, image=image, sub_lob=sub_lob, clarify=clarify)
+    if asked != text:
+        res["meta"]["followup"] = asked
     chat.append({"role": "assistant", "content": res["answer"], "sources": res["sources"],
                  "qid": res["id"], "result": res["result"], "confidence": res["confidence"],
                  "confidence_pct": res.get("confidence_pct"),
@@ -298,22 +292,14 @@ def page_ask():
     with main:
         if not chat:
             ui.hero(ss.user.split()[0])
-            st.write("")
-            topics = list(config.TOPICS)
-            for row in (topics[:5], topics[5:]):
-                cols = st.columns(5)
-                for c, t in zip(cols, row):
-                    label = config.TOPIC_LABELS.get(t, t)
-                    if c.button(f"{config.TOPIC_ICONS.get(t, '')} {label}", key=f"t_{t}", width="stretch",
-                                type="primary" if ss.topic == t else "secondary"):
-                        ss.topic = None if ss.topic == t else t
-                        st.rerun()
-            tries = SUGGESTIONS.get(ss.topic) if ss.topic else (kb.popular_questions(region, 5) or DEFAULT_TRY)
-            st.markdown(f"<div class='om-section'>{'💡 ' + ss.topic + ' - try asking' if ss.topic else 'Try asking'}</div>",
-                        unsafe_allow_html=True)
+            # 'Try asking' follows the selected LOB tab and sub-LOB chip (no separate topic buttons -
+            # they looked like filters but did not change the search)
+            where = f"{region} › {sub_lob}" if sub_lob else region
+            tries = kb.suggested_questions(region, sub_lob, 6) or DEFAULT_TRY
+            st.markdown(f"<div class='om-section'>💡 Try asking · {ui.esc(where)}</div>", unsafe_allow_html=True)
             cols = st.columns(3)
             for n, q in enumerate(tries[:6]):
-                if cols[n % 3].button(q, key=f"try{n}", width="stretch"):
+                if cols[n % 3].button(q, key=f"try{region}{sub_lob}{n}", width="stretch"):
                     ss.pending_q = q
                     st.rerun()
         else:

@@ -89,6 +89,12 @@ def search_text(question):
     """The words to SEARCH with: Hinglish translated, format words removed."""
     q = " ".join(HINGLISH.get(w.lower(), w) for w in question.split())
     q = FORMAT_WORDS.sub(" ", q)
+    # generic words ('looks', 'image', 'Europe', 'command') would pull in sections that merely
+    # contain them - leave them out when the question has 2+ specific words
+    words = re.findall(r"[A-Za-z0-9]+", q)
+    hard = [w for w in words if len(w) > 2 and w.lower() not in _STOP and w.lower() not in _SOFT]
+    if len(hard) >= 2:
+        q = " ".join(w for w in q.split() if re.sub(r"[^a-z0-9]", "", w.lower()) not in _SOFT)
     extra = [v for k, v in SYNONYMS.items() if re.search(rf"\b{k}\b", q, re.I)]
     q += " " + " ".join(extra)
     if TIME_WORDS.search(question):
@@ -122,6 +128,12 @@ def build_vocab(texts):
     return vocab
 
 
+# everyday words that are spelled right but may not appear in the documents
+_PLAIN = set("""give gives share shared shows tell send sent need want help explain kindly please thanks thank
+could would should where there their them they which other also every sure know known able like just only
+does doing done what when while about after before again still need needs okay fine good best""".split())
+
+
 def fix_spelling(question, vocab):
     """Correct words that are not in the documents to the closest word that is.
     'refnd tiket' -> 'refund ticket'. Works offline, no AI needed."""
@@ -133,7 +145,8 @@ def fix_spelling(question, vocab):
     def repl(m):
         w = m.group(0)
         lw = w.lower()
-        if len(lw) < 4 or lw in vocab or lw in HINGLISH or not lw.isalpha():
+        if (len(lw) < 4 or lw in vocab or lw in HINGLISH or not lw.isalpha()
+                or lw in _STOP or lw in _SOFT or lw in _PLAIN):   # everyday words are never 'corrected'
             return w
         cut = 0.75 if len(lw) >= 6 else 0.8
         best = difflib.get_close_matches(lw, vocab_list, n=1, cutoff=cut)
@@ -214,13 +227,14 @@ def ai_answer(question, region, hits, fmt, screenshot_text="", lob=""):
 _STOP = set("""a an the is are was were be been am do does did i me my we our you your it its of to in
 on for at by with from and or as this that these those can could should would will how what when where
 which who why please tell know need want get about any there step steps process
-long take takes time timeline many much come does happen kya hai""".split())
+long take takes time timeline many much come does happen kya hai have has had give share send provide some""".split())
 
 
 # Generic words staff add to a question ("how to CHECK ... in the GDS", "COMMAND for ...") that a
 # good passage often does not repeat. They count only when the question has nothing more specific.
 _SOFT = set("""check checking find see show use using make way gds system systems command commands cmd entry
-entries format formats tool tools screen""".split())
+entries format formats tool tools screen look looks looking like image images picture pictures pic sample
+samples example examples screenshot refer reference europe noram apac qbay global region lob""".split())
 
 
 def coverage(question, text):
@@ -512,3 +526,36 @@ def highlight_commands(text):
             continue
         pieces[k] = _TOKEN.sub(lambda m: f"`{m.group(1)}`" if _is_command(m.group(1).rstrip(".")) else m.group(0), p)
     return "".join(pieces)
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-UP QUESTIONS: "how about Sabre?" after "How to reissue a ticket in Amadeus?"
+# ---------------------------------------------------------------------------
+_FOLLOW = re.compile(r"^\s*(?:and\s+)?(?:how\s+about|what\s+about|wat\s+about|same\s+for|and\s+for|and\s+in|"
+                     r"and\s+with|for|in|with|also\s+for|and)\s+(.+?)\s*\??\s*$", re.I)
+SWAP_GROUPS = [["Amadeus", "Sabre", "Galileo", "Worldspan", "Apollo"],
+               ["NORAM", "EUROPE", "APAC", "QBAY"],
+               ["refund", "exchange", "reissue", "void", "issue", "cancel", "cancellation"]]
+
+
+def merge_followup(previous, question, extra_names=()):
+    """Short follow-up -> full question, using the previous question. Returns the question unchanged
+    when it is not a follow-up. 'how about Sabre' + 'How to reissue a ticket in Amadeus?'
+    -> 'How to reissue a ticket in Sabre?'"""
+    q = (question or "").strip()
+    if not previous or len(q.split()) > 6:
+        return q
+    m = _FOLLOW.match(q)
+    if not m:
+        return q
+    tail = m.group(1).strip(" ?")
+    prev = previous.strip().rstrip("?").strip()
+    groups = SWAP_GROUPS + ([list(extra_names)] if extra_names else [])
+    for group in groups:
+        new = next((g for g in group if re.search(rf"\b{re.escape(g)}\b", tail, re.I)), None)
+        old = next((g for g in group if re.search(rf"\b{re.escape(g)}\b", prev, re.I)), None)
+        if new and old and new.lower() != old.lower():
+            return re.sub(rf"\b{re.escape(old)}\b", new, prev, count=1, flags=re.I) + "?"
+    if tail.lower() in prev.lower():
+        return prev + "?"
+    return f"{prev} - {tail}?"

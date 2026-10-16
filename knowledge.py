@@ -697,6 +697,68 @@ def popular_questions(region, limit=6):
     return [r["question"] for r in rows]
 
 
+def suggested_questions(region, sub_lob=None, limit=6):
+    """'Try asking' for the selected LOB tab and sub-LOB chip:
+    1) questions staff asked most that OpsMate answered well, 2) questions written in the documents
+    themselves ('Q: ...' lines, '... - steps' sections). Selected sub-LOB first, then the LOB, then GLOBAL."""
+    out = []
+
+    def add(q):
+        q = re.sub(r"\s+", " ", q or "").strip()
+        if 8 <= len(q) <= 80 and q.lower() not in {x.lower() for x in out}:
+            out.append(q)
+
+    with _conn() as con:
+        args, extra = [region], ""
+        if sub_lob:
+            args.append(sub_lob)
+            extra = " AND sub_lob=?"
+        for r in con.execute(
+                "SELECT question, COUNT(*) n FROM questions WHERE region=?" + extra + " AND result='answered' "
+                "AND COALESCE(feedback,0)>=0 AND question NOT LIKE '%[screenshot]' "
+                "GROUP BY lower(question) ORDER BY n DESC, MAX(id) DESC LIMIT 4", args).fetchall():
+            add(r["question"])
+        scopes = ([(region, sub_lob)] if sub_lob else []) + [(region, None), (config.GLOBAL_REGION, None)]
+        for reg, sl in scopes:
+            if len(out) >= limit:
+                break
+            sql = ("SELECT c.location, c.text FROM chunks c JOIN documents d ON d.id=c.doc_id "
+                   "WHERE d.region=? AND COALESCE(d.status,'Active')='Active'")
+            a = [reg]
+            if sl:
+                sql += " AND d.sub_lob=?"
+                a.append(sl)
+            rows = con.execute(sql + " ORDER BY c.id LIMIT 400", a).fetchall()
+            found = []
+            for r in rows:
+                for q in re.findall(r"(?m)^\s*Q\s*[:.]\s*(.+\?)\s*$", r["text"]):
+                    found.append(q)
+                loc = r["location"] or ""
+                m = re.match(r"(.+?)\s-\s(?:steps|How to (.+?) step by step)$", loc)
+                if loc.endswith(" - steps"):
+                    found.append(f"What are the steps for {loc[:-8]}?")
+                elif re.match(r".+ - How to .+ step by step$", loc):
+                    sysname, what = loc.split(" - How to ", 1)
+                    found.append(f"How to {what.replace(' step by step', '')} in {sysname}?")
+            if len(found) < 3:                               # SOPs without Q&A: use their section titles
+                skip = re.compile(r"^(document|scope|purpose|overview|introduction|revision|version|page \d|"
+                                  r"sheet |slide |contents|appendix|references|definitions|image|ownership|"
+                                  r"approval|change history|how to use)", re.I)
+                for r in rows:
+                    loc = re.sub(r"\s-\s(Table \d+|image \d+)$", "", r["location"] or "")
+                    loc = re.sub(r"^\d+(\.\d+)*[.)]?\s+", "", loc).strip()
+                    if 10 <= len(loc) <= 70 and not skip.match(loc) and not loc.endswith(" - steps"):
+                        found.append(loc)
+            seen = set()
+            for q in found:                                  # spread across documents, not 6 from one
+                if q not in seen:
+                    seen.add(q)
+                    add(q)
+                if len(out) >= limit:
+                    break
+    return out[:limit]
+
+
 def read_file(doc):
     from pathlib import Path
     p = Path(doc["stored_path"])

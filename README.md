@@ -79,3 +79,8 @@ non-confidential SOPs on the free tier.
 - **Answers even when the AI is out of quota**: if the AI fails, is out of quota or replies "not found" while the
   documents clearly answer the question (strict word-match rule), OpsMate shows the document answer with a note.
   After a quota error the AI is skipped for 5 minutes (`AI_PAUSE_SECONDS`), so answers come at once.
+- **Home screen**: "Try asking" now follows the selected LOB tab and sub-LOB chip (most-asked questions, then
+  questions and section titles from that LOB's documents). The 10 topic buttons were removed (they looked like
+  filters but did not change the search). The welcome banner is half the height.
+- **Follow-up questions**: "how about Sabre?" after "How to reissue a ticket in Amadeus?" is understood as
+  "How to reissue a ticket in Sabre?" (shown under the answer as "follow-up, understood as …").

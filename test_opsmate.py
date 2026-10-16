@@ -182,3 +182,27 @@ def test_generic_words_do_not_block_an_answer():
     assert brain.coverage("how to check the availability in sabre GDS", sec) == 1.0
     assert brain.coverage("what is the command to print", "Sabre - Mandatory PNR fields (PRINT)") < 0.7
     assert kb.definition_term("what is AGM process") == "agm" and kb.definition_term("what is the BRIM system?") == "brim"
+
+
+def test_follow_up_questions_use_the_previous_question():
+    import brain
+    assert brain.merge_followup("How to reissue a ticket in Amadeus?", "how about Sabre") == "How to reissue a ticket in Sabre?"
+    assert brain.merge_followup("What is AGM?", "and BRIM?", ["AGM", "BRIM"]) == "What is BRIM?"
+    assert brain.merge_followup("How to void a ticket?", "what is ADM") == "what is ADM"       # a new question
+
+
+def test_try_asking_follows_the_selected_lob():
+    noram = kb.suggested_questions("NORAM", None)
+    assert noram and len(noram) <= 6
+    obt = kb.suggested_questions("NORAM", "OBT Cancellation")
+    assert obt and obt != noram
+
+
+def test_everyday_words_are_not_misread():
+    import brain
+    vocab = {"gives", "shared", "hotel", "invoice", "refund", "ticket"}
+    assert brain.fix_spelling("give me hotel invoice", vocab)[0] == "give me hotel invoice"   # not 'gives'
+    assert brain.fix_spelling("refnd tiket", vocab)[0] == "refund ticket"                     # real typos still fixed
+    assert "looks" not in brain.search_text("how does the hotel invoice looks in Europe")
+    sec = "Hotel invoice (Norway) - fields and what to check\nThe supplier who issued the invoice"
+    assert brain.coverage("do you have any hotel invoice image which i refer", sec) == 1.0
